@@ -2,6 +2,9 @@
 session_start();
 require 'lib/config.php';
 require 'lib/socialnetwork-lib.php';
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
 if (!isset($_SESSION['usuario'])) {
     header("Location: login.php");
@@ -16,10 +19,15 @@ try {
     die("Error en la conexión a la base de datos");
 }
 function saveMessage($pdo, $from, $to, $message) {
-    $stmt = $pdo->prepare("INSERT INTO chats (de, para, mensaje, fecha, leido) VALUES (?, ?, ?, NOW(), 0)");
-    return $stmt->execute([$from, $to, $message]);
+    try {
+        $stmt = $pdo->prepare("INSERT INTO chats (de, para, mensaje, fecha, leido) VALUES (?, ?, ?, NOW(), 0)");
+        $result = $stmt->execute([$from, $to, $message]);
+        return $result;
+    } catch (PDOException $e) {
+        error_log("Error al guardar el mensaje: " . $e->getMessage());
+        return false;
+    }
 }
-
 // Obtener el nombre del usuario con el que se está chateando
 if (isset($_GET['usuario'])) {
     $usuario_id = filter_input(INPUT_GET, 'usuario', FILTER_SANITIZE_NUMBER_INT);
@@ -55,6 +63,8 @@ $chats = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ionicons/2.0.1/css/ionicons.min.css">
     <link rel="stylesheet" href="dist/css/AdminLTE.min.css">
     <link rel="stylesheet" href="dist/css/skins/_all-skins.min.css">
+    <script src="plugins/jQuery/jquery-2.2.3.min.js"></script>
+    <script src="plugins/slimScroll/jquery.slimscroll.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
 </head>
 <body class="hold-transition skin-blue sidebar-mini">
@@ -120,11 +130,17 @@ $chats = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <script src="plugins/fastclick/fastclick.js"></script>
 <script src="dist/js/app.min.js"></script>
 <script>
-    const socket = io("http://localhost:3000");
+    const socket = io("http://localhost:3000", {
+        withCredentials: true,
+        extraHeaders: {
+            "my-custom-header": "abcd"
+        }
+    });
     
     const chatForm = document.getElementById("chat-form");
     const chatInput = document.getElementById("chat-input");
-    const chatMessages = document.getElementById("chat-messages");
+    var chatMessages = document.getElementById('chat-messages');
+    chatMessages.scrollTop = chatMessages.scrollHeight;
     let messageQueue = [];
 
     socket.on('connect', () => {
@@ -135,7 +151,7 @@ $chats = $stmt->fetchAll(PDO::FETCH_ASSOC);
         });
     });
 
-    chatForm.addEventListener("submit", (e) => {
+    chatForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         if (chatInput.value) {
             const message = {
@@ -146,53 +162,85 @@ $chats = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 receiverId: <?php echo $usuario_id; ?>,
                 timestamp: Date.now()
             };
-            console.log('Enviando mensaje:', message);// Mostrar el mensaje localmente inmediatamente
-            appendMessage(message);
+            console.log('Enviando mensaje:', message);
             
-            socket.emit("chat message", message);
-            chatInput.value = "";
+            try {
+                await saveMessage(chatInput.value);
+                socket.emit("chat message", message);
+                appendMessage(message);
+                chatInput.value = "";
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            } catch (error) {
+                console.error('Error al guardar el mensaje:', error);
+            }
         }
     });
 
     socket.on("chat message", (msg) => {
-    console.log('Mensaje recibido:', msg);
-    if (msg.userId == <?php echo $usuario_id; ?> || msg.userId == <?php echo $_SESSION['id']; ?>) {
-        // Si el mensaje es del usuario actual, no lo mostramos de nuevo
-        if (msg.userId != <?php echo $_SESSION['id']; ?>) {
-            appendMessage(msg);
+        console.log('Mensaje recibido:', msg);
+        if (msg.userId == <?php echo $usuario_id; ?> || msg.userId == <?php echo $_SESSION['id']; ?>) {
+            // Si el mensaje es del usuario actual, no lo mostramos de nuevo
+            if (msg.userId != <?php echo $_SESSION['id']; ?>) {
+                appendMessage(msg);
+            }
         }
+    });
+    function saveMessage(message) {
+        return new Promise((resolve, reject) => {
+            $.ajax({
+                url: 'save_message.php',
+                method: 'POST',
+                data: {
+                    from: <?php echo json_encode($_SESSION['id']); ?>,
+                    to: <?php echo json_encode($usuario_id); ?>,
+                    message: message
+                },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        console.log('Mensaje guardado en la base de datos');
+                        resolve(response);
+                    } else {
+                        console.error('Error al guardar el mensaje:', response.error);
+                        reject(response.error);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.error('Error en la solicitud AJAX:', error);
+                    reject(error);
+                }
+            });
+        });
     }
-});
+    function appendMessage(msg) {
+        console.log('Añadiendo mensaje al DOM:', msg);
+        const messageElement = document.createElement("div");
+        messageElement.classList.add("direct-chat-msg");
+        if (msg.userId == <?php echo $_SESSION['id']; ?>) {
+            messageElement.classList.add("right");
+        }
+        
+        messageElement.innerHTML = `
+            <div class="direct-chat-info clearfix">
+                <span class="direct-chat-name pull-${msg.userId == <?php echo $_SESSION['id']; ?> ? "right" : "left"}">${escapeHtml(msg.username)}</span>
+                <span class="direct-chat-timestamp pull-${msg.userId == <?php echo $_SESSION['id']; ?> ? "left" : "right"}">${new Date(msg.timestamp).toLocaleString()}</span>
+            </div>
+            <img class="direct-chat-img" src="avatars/${escapeHtml(msg.avatar)}" alt="User Avatar">
+            <div class="direct-chat-text">${escapeHtml(msg.message)}</div>
+        `;
+        
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
 
-function appendMessage(msg) {
-    console.log('Añadiendo mensaje al DOM:', msg);
-    const messageElement = document.createElement("div");
-    messageElement.classList.add("direct-chat-msg");
-    if (msg.userId == <?php echo $_SESSION['id']; ?>) {
-        messageElement.classList.add("right");
-    }
-    
-    messageElement.innerHTML = `
-        <div class="direct-chat-info clearfix">
-            <span class="direct-chat-name pull-${msg.userId == <?php echo $_SESSION['id']; ?> ? "right" : "left"}">${escapeHtml(msg.username)}</span>
-            <span class="direct-chat-timestamp pull-${msg.userId == <?php echo $_SESSION['id']; ?> ? "left" : "right"}">${new Date().toLocaleString()}</span>
-        </div>
-        <img class="direct-chat-img" src="avatars/${escapeHtml(msg.avatar)}" alt="User Avatar">
-        <div class="direct-chat-text">${escapeHtml(msg.message)}</div>
-    `;
-    
-    chatMessages.appendChild(messageElement);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-    function escapeHtml(unsafe) {
-        return unsafe
-             .replace(/&/g, "&amp;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;")
-             .replace(/"/g, "&quot;")
-             .replace(/'/g, "&#039;");
-    }
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
 
     socket.on('connect_error', (error) => {
         console.error('Error de conexión:', error);

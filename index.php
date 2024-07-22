@@ -226,6 +226,29 @@ $(document).ready(function() {
         });
     });
 });
+function actualizarContadorMensajes() {
+    fetch('leer_mensajes.php')
+        .then(response => response.json())
+        .then(data => {
+            const unreadCountElement = document.querySelector('.unread-count');
+            if (unreadCountElement) {
+                if (data.unreadCount > 0) {
+                    unreadCountElement.textContent = data.unreadCount;
+                    unreadCountElement.style.display = 'inline';
+                } else {
+                    unreadCountElement.style.display = 'none';
+                }
+            }
+        });
+}
+
+// Llama a esta función cuando se abran los mensajes o periódicamente
+// Por ejemplo:
+document.querySelector('a[href="mensajes.php"]').addEventListener('click', actualizarContadorMensajes);
+
+// O para actualizar periódicamente:
+setInterval(actualizarContadorMensajes, 60000); // Actualiza cada minuto
 </script>
+
 </body>
 </html>

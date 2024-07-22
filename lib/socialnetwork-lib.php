@@ -192,7 +192,7 @@ function Side($pdo) {
                         if ($unreadMessages > 0):
                         ?>
                         <span class="pull-right-container">
-                            <small class="label pull-right bg-green"><?php echo $unreadMessages; ?></small>
+                            <small class="label pull-right bg-green unread-count"><?php echo $unreadMessages; ?></small>
                         </span>
                         <?php endif; ?>
                     </a>

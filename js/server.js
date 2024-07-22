@@ -2,13 +2,14 @@ const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+    cors: {
+        origin: "http://localhost", 
+        methods: ["GET", "POST"],
+        credentials: true
+    }
 });
 const mysql = require('mysql2/promise');
-// Configuración de la base de datos
+
 const dbConfig = {
   host: 'localhost',
   user: 'root',
@@ -28,10 +29,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('chat message', async (msg) => {
+    // Validación de mensajes
+    if (!msg.userId || !msg.receiverId || !msg.message || !msg.timestamp) {
+      console.error('Mensaje incompleto recibido:', msg);
+      return;
+    }
+
     console.log('Mensaje recibido en el servidor:', msg);
     const roomName = [msg.userId, msg.receiverId].sort().join('-');
     
-    // Verificar si el mensaje ya está en el caché
     const messageKey = `${msg.userId}-${msg.timestamp}`;
     if (messageCache.has(messageKey)) {
       console.log('Mensaje duplicado detectado, ignorando');
@@ -48,25 +54,26 @@ io.on('connection', (socket) => {
       );
       console.log('Mensaje guardado en la base de datos');
       connection.end();
-
-      // Emitir el mensaje después de guardarlo exitosamente
       io.to(roomName).emit('chat message', msg);
     } catch (error) {
       console.error('Error al guardar el mensaje en la base de datos:', error);
     }
     
-    // Limpiar el caché después de un tiempo
     setTimeout(() => {
       messageCache.delete(messageKey);
-    }, 60000); // Limpiar después de 1 minuto
+    }, 60000);
   });
 
   socket.on('disconnect', () => {
     console.log('Un usuario se ha desconectado', socket.id);
   });
+
+  socket.on('error', (error) => {
+    console.error('Error de socket:', error);
+  });
 });
 
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
-  console.log(`Servidor escuchando en el puerto ${PORT}`);
+http.listen(3000, () => {
+  console.log('Servidor corriendo en http://localhost:3000');
 });

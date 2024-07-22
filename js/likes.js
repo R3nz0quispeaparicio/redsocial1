@@ -3,7 +3,7 @@ $(document).ready(function() {
         var $this = $(this);
         var id = $this.attr('id');
         $.ajax({
-            url: 'http://localhost/redsocial-master/redsocial-master/megusta.php',
+            url: 'megusta.php',
             type: 'POST',
             data: {id: id},
             dataType: 'json',
