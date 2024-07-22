@@ -4,7 +4,7 @@
   "description"; "WebSocket server for real-time chat in social network project",
   "main"; "server.js",
   "scripts"; {
-    "start"; "node server.js"
+    "start"; "NODE_ENV=production node server.js"
   };
   "dependencies"; {
     "express"; "^4.17.1",
